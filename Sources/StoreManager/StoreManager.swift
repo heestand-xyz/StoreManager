@@ -5,18 +5,30 @@ import KeychainSwift
 
 public final class StoreManager<SI: StoreItem>: ObservableObject {
     
+    public enum PurchaseCompletion {
+        case purchased
+        case pending
+        case userCancelled
+    }
+    
+    public enum RestoreCompletion {
+        case restored
+        case alreadyAvailable
+        case none
+    }
+    
     public enum StoreError: LocalizedError {
         case alreadyPrepared
-        case productNotFound
-        case subscriptionNotFound
+        case productNotFound(id: String)
+        case unknownError
         public var errorDescription: String? {
             switch self {
             case .alreadyPrepared:
-                return "Already Prepared"
-            case .productNotFound:
-                return "Product Not Found"
-            case .subscriptionNotFound:
-                return "Subscription Not Found"
+                return "Already prepared"
+            case .productNotFound(let id):
+                return "Product not found: \(id)"
+            case .unknownError:
+                return "Unknown Error"
             }
         }
     }
@@ -46,6 +58,9 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
         Task {
             await listen()
         }
+#if !os(macOS)
+        listenToApp()
+#endif
         
         connectivity.$status
             .compactMap { [weak self] status in
@@ -71,6 +86,32 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
             }
             .store(in: &cancelBag)
     }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+#if !os(macOS)
+
+    func listenToApp() {
+        NotificationCenter.default.addObserver(self, selector: #selector(didBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+    
+    @objc func didBecomeActive() {
+        Task {
+            do {
+                if !self.didPrepare {
+                    try await self.prepare()
+                } else {
+                    try await self.check()
+                }
+            } catch {
+                print("Store Manager - App active check failed:", error)
+            }
+        }
+    }
+
+#endif
     
     private func prepare() async throws {
         if didPrepare {
@@ -171,12 +212,7 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
         }
     }
     
-    /// Purchase an item
-    public func purchase(_ item: SI) async throws {
-        guard let product: Product = self.products[item] else {
-            throw StoreError.productNotFound
-        }
-        let result = try await product.purchase()
+    func processPurchase(result: Product.PurchaseResult, for item: SI) async throws -> PurchaseCompletion {
         switch result {
         case .success(let verification):
             switch verification {
@@ -185,15 +221,16 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
                     unlock(item)
                 }
                 await transaction.finish()
+                return .purchased
             case .unverified(_, let error):
                 throw error
             }
         case .userCancelled:
-            return
+            return .userCancelled
         case .pending:
-            return
+            return .pending
         @unknown default:
-            return
+            throw StoreError.unknownError
         }
     }
     
@@ -218,13 +255,15 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     }
     
     private func unlock(_ item: SI) {
-        print("Store Manager - Unlocked item:", item.id)
+        print("Store Manager - Unlocked item:", item.productID)
         keychain.set(true, forKey: item.keychainKey)
+        unlockedItems.insert(item)
     }
        
     private func lock(_ item: SI) {
-        print("Store Manager - Locked item:", item.id)
+        print("Store Manager - Locked item:", item.productID)
         keychain.set(false, forKey: item.keychainKey)
+        unlockedItems.remove(item)
     }
     
 #if DEBUG

@@ -3,7 +3,7 @@ public enum StoreItemType {
     case subscription
 }
 
-public protocol StoreItem: Identifiable, Hashable, CaseIterable {
+public protocol StoreItem: Hashable, CaseIterable {
     /// App Store Connect - Product ID
     var productID: String { get }
     var type: StoreItemType { get }
