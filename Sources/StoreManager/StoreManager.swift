@@ -49,6 +49,19 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     
     private var didPrepare: Bool = false
     
+#if DEBUG
+    /// Debug Only
+    public var debugFullAccess: Bool = false {
+        didSet {
+            if debugFullAccess {
+                unlockedItems = Set(SI.allCases)
+            } else {
+                unlockedItems = getUnlockedItems()
+            }
+        }
+    }
+#endif
+    
     public init() {
 
         unlockedItems = getUnlockedItems()
@@ -70,19 +83,8 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
                 print("Store Manager - Internet connectivity status:", status.name)
                 return status == .connected
             }
-            .sink { [weak self] status in
-                guard let self else { return }
-                Task {
-                    do {
-                        if !self.didPrepare {
-                            try await self.prepare()
-                        } else {
-                            try await self.check()
-                        }
-                    } catch {
-                        print("Store Manager - Connection check failed:", error)
-                    }
-                }
+            .sink { [weak self] _ in
+                self?.prepareOrCheck()
             }
             .store(in: &cancelBag)
     }
@@ -112,6 +114,20 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     }
 
 #endif
+    
+    private func prepareOrCheck() {
+        Task {
+            do {
+                if !didPrepare {
+                    try await prepare()
+                } else {
+                    try await check()
+                }
+            } catch {
+                print("Store Manager - Prepare or check failed:", error)
+            }
+        }
+    }
     
     private func prepare() async throws {
         if didPrepare {
@@ -268,7 +284,7 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     
 #if DEBUG
     /// Debug only
-    public func lockAllItems() {
+    public func debugLockAllItems() {
         for item in SI.allCases {
             lock(item)
         }
