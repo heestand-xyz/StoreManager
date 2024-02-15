@@ -5,9 +5,9 @@
 import Foundation
 import Connectivity
 
-final class StoreConnectivity: ObservableObject {
+public final class StoreConnectivity: ObservableObject {
     
-    enum InternetConnectionStatus {
+    public enum InternetConnectionStatus {
         case connected
         case disconnected
         case notDetermined

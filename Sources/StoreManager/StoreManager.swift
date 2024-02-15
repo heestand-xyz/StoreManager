@@ -45,6 +45,8 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     
     @Published public private(set) var products: [SI: Product] = [:]
     
+    @Published public private(set) var internetConnectionStatus: StoreConnectivity.InternetConnectionStatus = .notDetermined
+    
     private var cancelBag: Set<AnyCancellable> = []
     
     private var didPrepare: Bool = false
@@ -86,6 +88,14 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
             .sink { [weak self] _ in
                 self?.prepareOrCheck()
             }
+            .store(in: &cancelBag)
+        
+        connectivity.$status
+            .compactMap { [weak self] status in
+                self?.connectivity.internetConnectionStatus(status: status)
+            }
+            .receive(on: DispatchQueue.main)
+            .assign(to: \.internetConnectionStatus, on: self)
             .store(in: &cancelBag)
     }
     
