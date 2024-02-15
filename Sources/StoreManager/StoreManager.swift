@@ -54,17 +54,17 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
 #if DEBUG
     public enum DebugAccess {
         case none
-        case full
-        case real
+        case all
+        case current
     }
-    public var debugAccess: DebugAccess = .real {
+    public var debugAccess: DebugAccess = .current {
         didSet {
             switch debugAccess {
             case .none:
                 unlockedItems = []
-            case .full:
+            case .all:
                 unlockedItems = Set(SI.allCases)
-            case .real:
+            case .current:
                 unlockedItems = getUnlockedItems()
             }
         }
