@@ -52,12 +52,19 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     private var didPrepare: Bool = false
     
 #if DEBUG
-    /// Debug Only
-    public var debugFullAccess: Bool = false {
+    public enum DebugAccess {
+        case none
+        case full
+        case real
+    }
+    public var debugAccess: DebugAccess = .real {
         didSet {
-            if debugFullAccess {
+            switch debugAccess {
+            case .none:
+                unlockedItems = []
+            case .full:
                 unlockedItems = Set(SI.allCases)
-            } else {
+            case .real:
                 unlockedItems = getUnlockedItems()
             }
         }
