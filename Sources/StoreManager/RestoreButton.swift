@@ -43,6 +43,8 @@ public struct RestoreButton<Item: StoreItem, Label: View>: View {
                 } catch {
                     completion(.failure(error))
                 }
+                /// Fake sleep, it's too fast.
+                try await Task.sleep(for: .seconds(1))
                 restoring = false
             }
         } label: {
