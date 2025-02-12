@@ -3,7 +3,9 @@ import Combine
 import StoreKit
 import KeychainSwift
 
-public final class StoreManager<SI: StoreItem>: ObservableObject {
+@MainActor
+@Observable
+public final class StoreManager<SI: StoreItem> {
     
     public enum PurchaseCompletion {
         case purchased
@@ -41,13 +43,11 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     
     private let connectivity = StoreConnectivity()
     
-    @Published public private(set) var unlockedItems: Set<SI> = []
+    public private(set) var unlockedItems: Set<SI> = []
     
-    @Published public private(set) var products: [SI: Product] = [:]
+    public private(set) var products: [SI: Product] = [:]
     
-    @Published public private(set) var internetConnectionStatus: StoreConnectivity.InternetConnectionStatus = .notDetermined
-    
-    private var cancelBag: Set<AnyCancellable> = []
+    public private(set) var internetConnectionStatus: StoreConnectivity.InternetConnectionStatus = .notDetermined
     
     private var didPrepare: Bool = false
     
@@ -84,26 +84,16 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
         listenToApp()
 #endif
         
-        connectivity.$status
-            .compactMap { [weak self] status in
-                self?.connectivity.internetConnectionStatus(status: status)
+        Task {
+            for await status in connectivity.internetConnectionStatusStream {
+                await MainActor.run {
+                    internetConnectionStatus = status
+                    if status == .connected {
+                        prepareOrCheck()
+                    }
+                }
             }
-            .filter { status in
-                print("Store Manager - Internet connectivity status:", status.name)
-                return status == .connected
-            }
-            .sink { [weak self] _ in
-                self?.prepareOrCheck()
-            }
-            .store(in: &cancelBag)
-        
-        connectivity.$status
-            .compactMap { [weak self] status in
-                self?.connectivity.internetConnectionStatus(status: status)
-            }
-            .receive(on: DispatchQueue.main)
-            .assign(to: \.internetConnectionStatus, on: self)
-            .store(in: &cancelBag)
+        }
     }
     
     deinit {
@@ -271,6 +261,10 @@ public final class StoreManager<SI: StoreItem>: ObservableObject {
     public func restore() async throws {
         try await AppStore.sync()
         try await check()
+    }
+    
+    public func displayPrice(for item: SI) -> String? {
+        products[item]?.displayPrice
     }
     
     private func isLocked(_ item: SI) -> Bool {

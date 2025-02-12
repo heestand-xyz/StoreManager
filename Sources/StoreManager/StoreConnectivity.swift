@@ -5,9 +5,11 @@
 import Foundation
 import Connectivity
 
-public final class StoreConnectivity: ObservableObject {
+@MainActor
+@Observable
+public final class StoreConnectivity {
     
-    public enum InternetConnectionStatus {
+    public enum InternetConnectionStatus: Sendable {
         case connected
         case disconnected
         case notDetermined
@@ -23,7 +25,14 @@ public final class StoreConnectivity: ObservableObject {
         }
     }
     
-    @Published var status: ConnectivityStatus = .determining
+    var status: ConnectivityStatus = .determining {
+        didSet {
+            internetConnectionStatusContinuation.yield(internetConnectionStatus)
+        }
+    }
+    
+    /// Used by ``StoreManager``
+    let (internetConnectionStatusStream, internetConnectionStatusContinuation) = AsyncStream<InternetConnectionStatus>.makeStream()
     
     private let connectivity = Connectivity()
     
@@ -34,22 +43,22 @@ public final class StoreConnectivity: ObservableObject {
     private func startConnectivityNotifier() {
         connectivity.startNotifier()
         connectivity.whenConnected = { [weak self] connectivity in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.status = connectivity.status
             }
         }
         connectivity.whenDisconnected = { [weak self] connectivity in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.status = connectivity.status
             }
         }
     }
     
     var internetConnectionStatus: InternetConnectionStatus {
-        internetConnectionStatus(status: status)
+        Self.internetConnectionStatus(status: status)
     }
     
-    func internetConnectionStatus(status: ConnectivityStatus) -> InternetConnectionStatus {
+    private static func internetConnectionStatus(status: ConnectivityStatus) -> InternetConnectionStatus {
         switch status {
         case .connected,
                 .connectedViaCellular,
