@@ -27,19 +27,17 @@ public struct StoreButton<Item: StoreItem, Label: View>: View {
     
     public var body: some View {
         Button {
-            Task {
+            Task { @MainActor in
                 purchasing = true
                 do {
                     guard let product = storeManager.products[item] else {
                         throw StoreManager<Item>.StoreError.productNotFound(id: item.productID)
                     }
-                    let result: Product.PurchaseResult = try await {
 #if os(visionOS)
-                        return try await purchase(product)
+                    let result: Product.PurchaseResult = try await purchase(product)
 #else
-                        return try await product.purchase()
+                    let result: Product.PurchaseResult = try await product.purchase()
 #endif
-                    }()
                     let purchaseCompletion: StoreManager.PurchaseCompletion = try await storeManager.processPurchase(result: result, for: item)
                     completion(.success(purchaseCompletion))
                 } catch {
