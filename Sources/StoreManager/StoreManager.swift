@@ -8,7 +8,7 @@ import KeychainSwift
 public final class StoreManager<SI: StoreItem> {
     
     public enum PurchaseCompletion {
-        case purchased
+        case purchased(Transaction)
         case pending
         case userCancelled
     }
@@ -244,7 +244,7 @@ public final class StoreManager<SI: StoreItem> {
                     unlock(item)
                 }
                 await transaction.finish()
-                return .purchased
+                return .purchased(transaction)
             case .unverified(_, let error):
                 throw error
             }
