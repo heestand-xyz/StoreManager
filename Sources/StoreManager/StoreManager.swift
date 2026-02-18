@@ -43,7 +43,13 @@ public final class StoreManager<SI: StoreItem> {
     
     private let connectivity = StoreConnectivity()
     
-    public private(set) var unlockedItems: Set<SI> = []
+    public private(set) var unlockedItems: Set<SI> = [] {
+        didSet {
+            unlockedItemsStreamContinuation.yield(unlockedItems)
+        }
+    }
+    public let unlockedItemsStream: AsyncStream<Set<SI>>
+    private let unlockedItemsStreamContinuation: AsyncStream<Set<SI>>.Continuation
     
     public private(set) var products: [SI: Product] = [:]
     
@@ -73,6 +79,11 @@ public final class StoreManager<SI: StoreItem> {
     
     public init() {
 
+        (unlockedItemsStream, unlockedItemsStreamContinuation) = AsyncStream.makeStream(
+            of: Set<SI>.self,
+            bufferingPolicy: .unbounded
+        )
+        
         unlockedItems = getUnlockedItems()
 
         print("Store Manager - Init with \(unlockedItems.count) unlocked items.")
@@ -257,8 +268,13 @@ public final class StoreManager<SI: StoreItem> {
         }
     }
     
-    /// Syncs with App Store and checks for purchases
+    @available(*, deprecated, renamed: "sync")
     public func restore() async throws {
+        try await sync()
+    }
+    
+    /// Syncs with App Store and checks for purchases.
+    public func sync() async throws {
         try await AppStore.sync()
         try await check()
     }

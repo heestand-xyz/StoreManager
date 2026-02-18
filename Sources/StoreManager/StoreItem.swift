@@ -1,9 +1,9 @@
-public enum StoreItemType {
+public enum StoreItemType: Sendable {
     case oneTime
     case subscription
 }
 
-public protocol StoreItem: Hashable, CaseIterable {
+public protocol StoreItem: Hashable, CaseIterable, Sendable {
     /// App Store Connect - Product ID
     var productID: String { get }
     var type: StoreItemType { get }

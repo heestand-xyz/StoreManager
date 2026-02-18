@@ -21,10 +21,6 @@ public struct RestoreButton<Item: StoreItem, Label: View>: View {
         self.completion = completion
     }
     
-#if os(visionOS)
-    @Environment(\.purchase) private var purchase: PurchaseAction
-#endif
-    
     public var body: some View {
         Button {
             Task {
@@ -33,7 +29,7 @@ public struct RestoreButton<Item: StoreItem, Label: View>: View {
                     if storeManager.unlockedItems.contains(item) {
                         completion(.success(.alreadyAvailable))
                     } else {
-                        try await storeManager.restore()
+                        try await storeManager.sync()
                         if storeManager.unlockedItems.contains(item) {
                             completion(.success(.restored))
                         } else {
@@ -43,8 +39,6 @@ public struct RestoreButton<Item: StoreItem, Label: View>: View {
                 } catch {
                     completion(.failure(error))
                 }
-                /// Fake sleep, it's too fast.
-                try await Task.sleep(for: .seconds(1))
                 restoring = false
             }
         } label: {
