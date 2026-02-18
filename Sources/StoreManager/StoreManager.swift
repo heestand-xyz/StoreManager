@@ -197,22 +197,27 @@ public final class StoreManager<SI: StoreItem> {
             case .subscription:
             
                 guard let statuses: [Product.SubscriptionInfo.Status] = try await product.subscription?.status else { continue }
-                let isActive: Bool = statuses.reduce(false) { isActive, status in
-                    if isActive { return true }
+                let activeProductIDs: Set<String> = Set(statuses.compactMap { status in
                     switch status.state {
                     case .subscribed, .inGracePeriod, .inBillingRetryPeriod:
-                        return true
+                        switch status.transaction {
+                        case .verified(let transaction):
+                            return transaction.productID
+                        case .unverified:
+                            return nil
+                        }
                     case .expired, .revoked:
-                        return false
+                        return nil
                     default:
-                        return false
+                        return nil
                     }
-                }
-                if isActive && isLocked(item) {
+                })
+                let isItemActive: Bool = activeProductIDs.contains(item.productID)
+                if isItemActive && isLocked(item) {
                     await MainActor.run {
                         unlock(item)
                     }
-                } else if !isActive && isUnlocked(item) {
+                } else if !isItemActive && isUnlocked(item) {
                     await MainActor.run {
                         lock(item)
                     }
