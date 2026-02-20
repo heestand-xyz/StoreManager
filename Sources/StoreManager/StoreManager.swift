@@ -174,6 +174,9 @@ public final class StoreManager<SI: StoreItem> {
     
     /// Check for purchased items
     public func check() async throws {
+        if products.isEmpty {
+            try await setup()
+        }
         
         /// Purchases
         for (item, product) in self.products {
@@ -195,7 +198,7 @@ public final class StoreManager<SI: StoreItem> {
                 }
                 
             case .subscription:
-            
+                
                 guard let statuses: [Product.SubscriptionInfo.Status] = try await product.subscription?.status else { continue }
                 let activeProductIDs: Set<String> = Set(statuses.compactMap { status in
                     switch status.state {
@@ -230,20 +233,11 @@ public final class StoreManager<SI: StoreItem> {
         for await result in Transaction.updates {
             switch result {
             case .verified(let transaction):
-                if let item: SI = .allCases.first(where: { $0.productID == transaction.productID }) {
-                    await MainActor.run {
-                        unlock(item)
-                    }
-                    await transaction.finish()
-                } else if let subscriptionItem: SI = .allCases.first(where: { $0.productID == transaction.productID }) {
-                    await MainActor.run {
-                        unlock(subscriptionItem)
-                    }
-                    await transaction.finish()
-                } else {
-                    print("Store Manager - Warning:", "Transaction product not found.",
-                          "Product ID:", transaction.productID)
-                    continue
+                await transaction.finish()
+                do {
+                    try await check()
+                } catch {
+                    print("Store Manager - Transaction update check failed:", error)
                 }
             case .unverified:
                 continue
