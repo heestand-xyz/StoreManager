@@ -151,12 +151,11 @@ public final class StoreManager<SI: StoreItem> {
         if didPrepare {
             throw StoreError.alreadyPrepared
         }
-        try await setup()
         try await check()
         didPrepare = true
     }
     
-    private func setup() async throws {
+    private func fetchProducts() async throws {
         let products = try await Product.products(for: SI.allCases.map(\.productID))
         for product in products {
             guard let item = SI(productID: product.id) else { continue }
@@ -174,9 +173,7 @@ public final class StoreManager<SI: StoreItem> {
     
     /// Check for purchased items
     public func check() async throws {
-        if products.isEmpty {
-            try await setup()
-        }
+        try await fetchProducts()
         
         /// Purchases
         for (item, product) in self.products {
