@@ -55,8 +55,6 @@ public final class StoreManager<SI: StoreItem> {
     
     public private(set) var internetConnectionStatus: StoreConnectivity.InternetConnectionStatus = .notDetermined
     
-    private var didPrepare: Bool = false
-    
 #if DEBUG
     public enum DebugAccess {
         case none
@@ -99,8 +97,12 @@ public final class StoreManager<SI: StoreItem> {
             for await status in connectivity.internetConnectionStatusStream {
                 await MainActor.run {
                     internetConnectionStatus = status
-                    if status == .connected {
-                        prepareOrCheck()
+                }
+                if status == .connected {
+                    do {
+                        try await check()
+                    } catch {
+                        print("Store Manager - Prepare or check failed:", error)
                     }
                 }
             }
@@ -120,11 +122,7 @@ public final class StoreManager<SI: StoreItem> {
     @objc func didBecomeActive() {
         Task {
             do {
-                if !self.didPrepare {
-                    try await self.prepare()
-                } else {
-                    try await self.check()
-                }
+                try await self.check()
             } catch {
                 print("Store Manager - App active check failed:", error)
             }
@@ -133,32 +131,15 @@ public final class StoreManager<SI: StoreItem> {
 
 #endif
     
-    private func prepareOrCheck() {
-        Task {
-            do {
-                if !didPrepare {
-                    try await prepare()
-                } else {
-                    try await check()
-                }
-            } catch {
-                print("Store Manager - Prepare or check failed:", error)
-            }
-        }
-    }
-    
-    private func prepare() async throws {
-        if didPrepare {
-            throw StoreError.alreadyPrepared
-        }
-        try await check()
-        didPrepare = true
-    }
-    
     private func fetchProducts() async throws {
         let products = try await Product.products(for: SI.allCases.map(\.productID))
         for product in products {
-            guard let item = SI(productID: product.id) else { continue }
+            guard let item = SI(productID: product.id) else {
+                print("Store Manager - Warning:",
+                      "Product unknown.",
+                      "ID: \(product.id)")
+                continue
+            }
             await MainActor.run {
                 self.products[item] = product
             }
