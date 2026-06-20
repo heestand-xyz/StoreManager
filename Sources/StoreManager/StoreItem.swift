@@ -1,3 +1,5 @@
+import Foundation
+
 public enum StoreItemType: Sendable {
     case oneTime
     case subscription
@@ -7,6 +9,7 @@ public protocol StoreItem: Hashable, CaseIterable, Sendable {
     /// App Store Connect - Product ID
     var productID: String { get }
     var type: StoreItemType { get }
+    var demoTime: TimeInterval? { get }
 }
 
 extension StoreItem {
@@ -21,5 +24,9 @@ extension StoreItem {
     
     var keychainKey: String {
         "store-item-\(productID)"
+    }
+    
+    var keychainDemoDateKey: String {
+        "\(keychainKey)_demo-date"
     }
 }

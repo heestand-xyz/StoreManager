@@ -20,10 +20,6 @@ public struct SyncButton<Item: StoreItem, Label: View>: View {
         _failure = failure
     }
     
-#if os(visionOS)
-    @Environment(\.purchase) private var purchase: PurchaseAction
-#endif
-    
     public var body: some View {
         Button {
             syncing = true

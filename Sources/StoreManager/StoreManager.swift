@@ -51,6 +51,14 @@ public final class StoreManager<SI: StoreItem> {
     public let unlockedItemsStream: AsyncStream<Set<SI>>
     private let unlockedItemsStreamContinuation: AsyncStream<Set<SI>>.Continuation
     
+    public private(set) var demoingItems: Set<SI> = [] {
+        didSet {
+            demoingStreamContinuation.yield(demoingItems)
+        }
+    }
+    public let demoingStream: AsyncStream<Set<SI>>
+    private let demoingStreamContinuation: AsyncStream<Set<SI>>.Continuation
+    
     public private(set) var products: [SI: Product] = [:]
     
     public private(set) var internetConnectionStatus: StoreConnectivity.InternetConnectionStatus = .notDetermined
@@ -75,6 +83,18 @@ public final class StoreManager<SI: StoreItem> {
     }
 #endif
     
+    private let jsonDateDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+    
+    private let jsonDateEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+    
     public init() {
 
         (unlockedItemsStream, unlockedItemsStreamContinuation) = AsyncStream.makeStream(
@@ -82,7 +102,13 @@ public final class StoreManager<SI: StoreItem> {
             bufferingPolicy: .unbounded
         )
         
+        (demoingStream, demoingStreamContinuation) = AsyncStream.makeStream(
+            of: Set<SI>.self,
+            bufferingPolicy: .unbounded
+        )
+        
         unlockedItems = getUnlockedItems()
+        setupDemos()
 
         print("Store Manager - Init with \(unlockedItems.count) unlocked items.")
         
@@ -287,10 +313,94 @@ public final class StoreManager<SI: StoreItem> {
     }
     
 #if DEBUG
-    /// Debug only
+    /// Debug mode only
     public func debugLockAllItems() {
         for item in SI.allCases {
             lock(item)
+        }
+    }
+#endif
+}
+
+// MARK: - Demo
+
+extension StoreManager {
+    
+    private func setupDemos() {
+        for item in SI.allCases {
+            demoIfNeeded(item)
+        }
+    }
+    
+    public func demoInfo(_ item: SI) -> DemoInfo {
+        guard let time: TimeInterval = item.demoTime else {
+            print("Store Manager - Demo Info - No valid demo time for item:", item.productID)
+            return .notUsed
+        }
+        guard let data: Data = keychain.getData(item.keychainDemoDateKey) else {
+            return .notUsed
+        }
+        do {
+            let startDate: Date = try jsonDateDecoder.decode(Date.self, from: data)
+            let isOngoing: Bool = startDate.distance(to: .now) < time
+            return DemoInfo(state: isOngoing ? .ongoing : .used, startDate: startDate)
+        } catch {
+            print("Store Manager - Demo Info - Error decoding start date for item:", item.productID)
+            return .notUsed
+        }
+    }
+    
+    public func startDemo(_ item: SI, started: (() -> Void)? = nil, ended: (() -> Void)? = nil) {
+        guard let time: TimeInterval = item.demoTime else {
+            print("Store Manager - Start Demo - No valid demo time for item:", item.productID)
+            return
+        }
+        guard keychain.getData(item.keychainDemoDateKey) == nil else {
+            print("Store Manager - Start Demo - Already started demo for item:", item.productID)
+            return
+        }
+        let startDate: Date = .now
+        let info = DemoInfo(state: .ongoing, startDate: startDate)
+        do {
+            let data: Data = try jsonDateEncoder.encode(startDate)
+            keychain.set(data, forKey: item.keychainDemoDateKey)
+            demoIfNeeded(item, started: started, ended: ended)
+        } catch {
+            print("Store Manager - Start Demo - Error encoding start date for item:", item.productID)
+        }
+    }
+    
+    private func demoIfNeeded(_ item: SI, started: (() -> Void)? = nil, ended: (() -> Void)? = nil) {
+        guard let time: TimeInterval = item.demoTime else { return }
+        let info = demoInfo(item)
+        guard info.state == .ongoing else { return }
+        guard let startDate = info.startDate else { return }
+        guard (Date.now.advanced(by: -time)...Date.now).contains(startDate) else { return }
+        demoStarted(item)
+        started?()
+        let timer = Timer(fire: startDate.advanced(by: time), interval: 0.0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.demoEnded(item)
+                ended?()
+            }
+        }
+        RunLoop.current.add(timer, forMode: .common)
+    }
+    
+    private func demoStarted(_ item: SI) {
+        demoingItems.insert(item)
+    }
+    
+    private func demoEnded(_ item: SI) {
+        demoingItems.remove(item)
+    }
+    
+#if DEBUG
+    /// Debug mode only
+    public func debugResetAllDemos() {
+        for item in SI.allCases {
+            demoEnded(item)
+            keychain.delete(item.keychainDemoDateKey)
         }
     }
 #endif
