@@ -39,21 +39,34 @@ public struct DemoButton<
                 } label: {
                     notUsedLabel(AnyView(Group {
                         if let time = item.demoTime {
-                            Text("Demo for \((Date.now..<Date.now.advanced(by: time)), format: .timeDuration)")
+                            if time.truncatingRemainder(dividingBy: 60 * 60) == 0.0 {
+                                let hours = Int(time / (60 * 60))
+                                Text("Demo for \(hours) hour\(hours > 1 ? "s" : "")")
+                            } else if time.truncatingRemainder(dividingBy: 60) == 0.0 {
+                                let minutes = Int(time / (60))
+                                Text("Demo for \(minutes) minute\(minutes > 1 ? "s" : "")")
+                            } else {
+                                Text("Demo for a duration of \((Date.now..<Date.now.advanced(by: time)), format: .timeDuration)")
+                            }
                         }
                     }))
                 }
             case .ongoing:
-                ongoingLabel(AnyView(Group {
-                    if let timeRange: Range<Date> = info.timeRange(for: item) {
-                        Text("Demoing: \(timeRange, format: .timeDuration)")
-                    } else {
-                        Text("Demoing...")
-                    }
-                }))
+                TimelineView(.animation) { context in
+                    ongoingLabel(AnyView(Group {
+                        if let timeRange: Range<Date> = info.timeRange(for: item), context.date < timeRange.upperBound {
+                            Text("Demo time: \(context.date..<timeRange.upperBound, format: .timeDuration)")
+                                .monospacedDigit()
+                        } else {
+                            Text("Demo time...")
+                        }
+                    }))
+                }
             case .used:
                 usedLabel(AnyView(Group {
                     Text("Demo time expired.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 }))
             }
         }
