@@ -58,6 +58,7 @@ public final class StoreManager<SI: StoreItem> {
     }
     public let demoingStream: AsyncStream<Set<SI>>
     private let demoingStreamContinuation: AsyncStream<Set<SI>>.Continuation
+    private var demoTimers: [SI: Timer] = [:]
     
     public private(set) var products: [SI: Product] = [:]
     
@@ -304,6 +305,10 @@ public final class StoreManager<SI: StoreItem> {
         print("Store Manager - Unlocked item:", item.productID)
         keychain.set(true, forKey: item.keychainKey)
         unlockedItems.insert(item)
+        if item.demoTime != nil,
+           demoingItems.contains(item) {
+            stopDemo(item)
+        }
     }
        
     private func lock(_ item: SI) {
@@ -351,7 +356,7 @@ extension StoreManager {
     }
     
     public func startDemo(_ item: SI, started: (() -> Void)? = nil, ended: (() -> Void)? = nil) {
-        guard let time: TimeInterval = item.demoTime else {
+        guard item.demoTime != nil else {
             print("Store Manager - Start Demo - No valid demo time for item:", item.productID)
             return
         }
@@ -360,7 +365,6 @@ extension StoreManager {
             return
         }
         let startDate: Date = .now
-        let info = DemoInfo(state: .ongoing, startDate: startDate)
         do {
             let data: Data = try jsonDateEncoder.encode(startDate)
             keychain.set(data, forKey: item.keychainDemoDateKey)
@@ -372,26 +376,29 @@ extension StoreManager {
     
     private func demoIfNeeded(_ item: SI, started: (() -> Void)? = nil, ended: (() -> Void)? = nil) {
         guard let time: TimeInterval = item.demoTime else { return }
+        guard time > 0.0 else {
+            assertionFailure("Demo time non positive.")
+            return
+        }
         let info = demoInfo(item)
         guard info.state == .ongoing else { return }
         guard let startDate = info.startDate else { return }
         guard (Date.now.advanced(by: -time)...Date.now).contains(startDate) else { return }
-        demoStarted(item)
+        demoingItems.insert(item)
         started?()
         let timer = Timer(fire: startDate.advanced(by: time), interval: 0.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.demoEnded(item)
+                self?.stopDemo(item)
                 ended?()
             }
         }
         RunLoop.current.add(timer, forMode: .common)
+        demoTimers[item] = timer
     }
     
-    private func demoStarted(_ item: SI) {
-        demoingItems.insert(item)
-    }
-    
-    private func demoEnded(_ item: SI) {
+    private func stopDemo(_ item: SI) {
+        demoTimers[item]?.invalidate()
+        demoTimers[item] = nil
         demoingItems.remove(item)
     }
     
@@ -399,7 +406,7 @@ extension StoreManager {
     /// Debug mode only
     public func debugResetAllDemos() {
         for item in SI.allCases {
-            demoEnded(item)
+            stopDemo(item)
             keychain.delete(item.keychainDemoDateKey)
         }
     }
