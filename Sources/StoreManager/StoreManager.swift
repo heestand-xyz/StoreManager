@@ -35,9 +35,11 @@ public final class StoreManager<SI: StoreItem> {
         }
     }
     
-    private let keychain: KeychainSwift = {
+    private let synchronizable: Bool
+    @ObservationIgnored
+    private lazy var keychain: KeychainSwift = {
         let keychain = KeychainSwift()
-        keychain.synchronizable = true
+        keychain.synchronizable = synchronizable
         return keychain
     }()
     
@@ -96,8 +98,11 @@ public final class StoreManager<SI: StoreItem> {
         return encoder
     }()
     
-    public init() {
-
+    /// Store Manger via Keychain
+    /// - Parameter synchronizable: Sync via iCloud (does not work on macOS).
+    public init(synchronizable: Bool = false) {
+        self.synchronizable = synchronizable
+        
         (unlockedItemsStream, unlockedItemsStreamContinuation) = AsyncStream.makeStream(
             of: Set<SI>.self,
             bufferingPolicy: .unbounded
@@ -385,6 +390,7 @@ extension StoreManager {
         guard let startDate = info.startDate else { return }
         guard (Date.now.advanced(by: -time)...Date.now).contains(startDate) else { return }
         demoingItems.insert(item)
+        print("Store Manager - Started Demo for item:", item.productID)
         started?()
         let timer = Timer(fire: startDate.advanced(by: time), interval: 0.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
