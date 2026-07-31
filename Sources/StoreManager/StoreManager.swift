@@ -61,6 +61,11 @@ public final class StoreManager<SI: StoreItem> {
     public let demoingStream: AsyncStream<Set<SI>>
     private let demoingStreamContinuation: AsyncStream<Set<SI>>.Continuation
     private var demoTimers: [SI: Timer] = [:]
+
+    @ObservationIgnored
+    private var transactionUpdatesTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var connectivityTask: Task<Void, Never>?
     
     public private(set) var products: [SI: Product] = [:]
     
@@ -105,12 +110,12 @@ public final class StoreManager<SI: StoreItem> {
         
         (unlockedItemsStream, unlockedItemsStreamContinuation) = AsyncStream.makeStream(
             of: Set<SI>.self,
-            bufferingPolicy: .unbounded
+            bufferingPolicy: .bufferingNewest(1)
         )
         
         (demoingStream, demoingStreamContinuation) = AsyncStream.makeStream(
             of: Set<SI>.self,
-            bufferingPolicy: .unbounded
+            bufferingPolicy: .bufferingNewest(1)
         )
         
         unlockedItems = getUnlockedItems()
@@ -118,18 +123,22 @@ public final class StoreManager<SI: StoreItem> {
 
         print("Store Manager - Init with \(unlockedItems.count) unlocked items.")
         
-        Task {
-            await listen()
+        transactionUpdatesTask = Task { [weak self] in
+            for await result in Transaction.updates {
+                if Task.isCancelled { return }
+                guard let self else { return }
+                await handleTransactionUpdate(result)
+            }
         }
 #if !os(macOS)
         listenToApp()
 #endif
         
-        Task {
+        connectivityTask = Task { [weak self, connectivity = self.connectivity] in
             for await status in connectivity.internetConnectionStatusStream {
-                await MainActor.run {
-                    internetConnectionStatus = status
-                }
+                if Task.isCancelled { return }
+                guard let self else { return }
+                internetConnectionStatus = status
                 if status == .connected {
                     do {
                         try await check()
@@ -142,6 +151,10 @@ public final class StoreManager<SI: StoreItem> {
     }
     
     deinit {
+        transactionUpdatesTask?.cancel()
+        connectivityTask?.cancel()
+        unlockedItemsStreamContinuation.finish()
+        demoingStreamContinuation.finish()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -239,19 +252,19 @@ public final class StoreManager<SI: StoreItem> {
         }
     }
     
-    private func listen() async {
-        for await result in Transaction.updates {
-            switch result {
-            case .verified(let transaction):
-                await transaction.finish()
-                do {
-                    try await check()
-                } catch {
-                    print("Store Manager - Transaction update check failed:", error)
-                }
-            case .unverified:
-                continue
+    private func handleTransactionUpdate(
+        _ result: VerificationResult<Transaction>
+    ) async {
+        switch result {
+        case .verified(let transaction):
+            await transaction.finish()
+            do {
+                try await check()
+            } catch {
+                print("Store Manager - Transaction update check failed:", error)
             }
+        case .unverified:
+            return
         }
     }
     
