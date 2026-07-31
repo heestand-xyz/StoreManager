@@ -10,6 +10,7 @@ public struct DemoButton<
     
     let item: Item
     let storeManager: StoreManager<Item>
+    let started: () -> Void
     let notUsedLabel: (AnyView) -> NotUsedLabel
     let ongoingLabel: (AnyView) -> OngoingLabel
     let usedLabel: (AnyView) -> UsedLabel
@@ -19,12 +20,14 @@ public struct DemoButton<
     public init(
         for item: Item,
         storeManager: StoreManager<Item>,
+        started: @escaping () -> Void = {},
         notUsedLabel: @escaping (AnyView) -> NotUsedLabel,
         ongoingLabel: @escaping (AnyView) -> OngoingLabel,
         usedLabel: @escaping (AnyView) -> UsedLabel,
     ) {
         self.item = item
         self.storeManager = storeManager
+        self.started = started
         self.notUsedLabel = notUsedLabel
         self.ongoingLabel = ongoingLabel
         self.usedLabel = usedLabel
@@ -80,6 +83,7 @@ public struct DemoButton<
             item,
             started: {
                 info = storeManager.demoInfo(item)
+                started()
             },
             ended: {
                 info = storeManager.demoInfo(item)
