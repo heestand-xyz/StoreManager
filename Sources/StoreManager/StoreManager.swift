@@ -206,18 +206,19 @@ public final class StoreManager<SI: StoreItem> {
             
             switch item.type {
             case .oneTime:
-                
-                if isLocked(item) {
-                    guard let result = await product.latestTransaction else { continue }
-                    switch result {
-                    case .verified(let transaction):
-                        await MainActor.run {
+                guard let result = await product.latestTransaction else { continue }
+                switch result {
+                case .verified(let transaction):
+                    if transaction.revocationDate == nil {
+                        if isLocked(item) {
                             unlock(item)
                         }
-                        await transaction.finish()
-                    case .unverified:
-                        continue
+                    } else if isUnlocked(item) {
+                        lock(item)
                     }
+                    await transaction.finish()
+                case .unverified:
+                    continue
                 }
                 
             case .subscription:
